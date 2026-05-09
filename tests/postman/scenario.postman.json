@@ -1,0 +1,293 @@
+{
+  "info": {
+    "name": "Licensing Cloud Challenge — Scénario complet",
+    "description": "Scénario de test complet : création licence, enregistrement apps, démarrage jobs, quota, révocation.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "gatewayUrl",      "value": "http://localhost:8080" },
+    { "key": "licensingUrl",    "value": "http://localhost:8081" },
+    { "key": "meteringUrl",     "value": "http://localhost:8082" },
+    { "key": "licenseToken",    "value": "" },
+    { "key": "appId1",          "value": "" },
+    { "key": "appId2",          "value": "" },
+    { "key": "jobId",           "value": "" }
+  ],
+  "item": [
+    {
+      "name": "🔍 Health Checks",
+      "item": [
+        {
+          "name": "Gateway health",
+          "request": { "method": "GET", "url": "{{gatewayUrl}}/health" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Gateway healthy', () => pm.response.to.have.status(200));"
+          ]}}]
+        },
+        {
+          "name": "Licensing service health",
+          "request": { "method": "GET", "url": "{{licensingUrl}}/health" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Licensing healthy', () => pm.response.to.have.status(200));"
+          ]}}]
+        },
+        {
+          "name": "Metering service health",
+          "request": { "method": "GET", "url": "{{meteringUrl}}/health" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Metering healthy', () => pm.response.to.have.status(200));"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "📜 Licences",
+      "item": [
+        {
+          "name": "1. Créer licence (acme — maxApps=2, maxExec=100)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 201', () => pm.response.to.have.status(201));",
+            "const json = pm.response.json();",
+            "pm.test('Token present', () => pm.expect(json.token).to.not.be.empty);",
+            "pm.collectionVariables.set('licenseToken', json.token);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{gatewayUrl}}/api/licenses",
+            "body": { "mode": "raw", "raw": "{\n  \"tenantId\": \"acme\",\n  \"maxApps\": 2,\n  \"maxExecutionsPer24h\": 100,\n  \"validFrom\": \"2025-01-01T00:00:00Z\",\n  \"validTo\": \"2026-12-31T00:00:00Z\",\n  \"status\": \"ACTIVE\"\n}" }
+          }
+        },
+        {
+          "name": "2. Créer duplicate (doit échouer)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 409 - conflit', () => pm.response.to.have.status(409));",
+            "pm.test('Error message present', () => pm.expect(pm.response.json().error).to.include('already exists'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{gatewayUrl}}/api/licenses",
+            "body": { "mode": "raw", "raw": "{\n  \"tenantId\": \"acme\",\n  \"maxApps\": 5,\n  \"maxExecutionsPer24h\": 200,\n  \"validFrom\": \"2025-01-01T00:00:00Z\",\n  \"validTo\": \"2026-12-31T00:00:00Z\",\n  \"status\": \"ACTIVE\"\n}" }
+          }
+        },
+        {
+          "name": "3. Lister toutes les licences",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Array returned', () => pm.expect(pm.response.json()).to.be.an('array'));"
+          ]}}],
+          "request": { "method": "GET", "url": "{{gatewayUrl}}/api/licenses" }
+        },
+        {
+          "name": "4. Upgrader la licence (maxApps → 5)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('MaxApps updated', () => pm.expect(pm.response.json().maxApps).to.equal(5));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{gatewayUrl}}/api/licenses/upgrade",
+            "body": { "mode": "raw", "raw": "{\n  \"tenantId\": \"acme\",\n  \"maxApps\": 5\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📱 Applications",
+      "item": [
+        {
+          "name": "5. Enregistrer App 1 (doit réussir)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 201', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('appId1', pm.response.json().id);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{licenseToken}}" }
+            ],
+            "url": "{{gatewayUrl}}/api/apps/register",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Application One\",\n  \"description\": \"Première application\"\n}" }
+          }
+        },
+        {
+          "name": "6. Enregistrer App 2 (doit réussir)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 201', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('appId2', pm.response.json().id);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{licenseToken}}" }
+            ],
+            "url": "{{gatewayUrl}}/api/apps/register",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Application Two\",\n  \"description\": \"Deuxième application\"\n}" }
+          }
+        },
+        {
+          "name": "7. Enregistrer App 3 sans upgrade (doit échouer — maxApps=2)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 429 - quota apps atteint', () => pm.response.to.have.status(429));",
+            "pm.test('Error message', () => pm.expect(pm.response.json().error).to.include('App limit'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{licenseToken}}" }
+            ],
+            "url": "{{gatewayUrl}}/api/apps/register",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Application Three\",\n  \"description\": \"Doit être refusée\"\n}" }
+          }
+        },
+        {
+          "name": "8. Lister les apps",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('2 apps retournées', () => pm.expect(pm.response.json()).to.have.lengthOf(2));"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{licenseToken}}" }],
+            "url": "{{gatewayUrl}}/api/apps"
+          }
+        }
+      ]
+    },
+    {
+      "name": "⚙️ Jobs & Quota",
+      "item": [
+        {
+          "name": "9. Démarrer un job (doit réussir)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 201', () => pm.response.to.have.status(201));",
+            "const json = pm.response.json();",
+            "pm.collectionVariables.set('jobId', json.id);",
+            "pm.test('Status RUNNING', () => pm.expect(json.status).to.equal('RUNNING'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{licenseToken}}" }
+            ],
+            "url": "{{gatewayUrl}}/api/jobs/start",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Mon premier job\",\n  \"appId\": \"{{appId1}}\"\n}" }
+          }
+        },
+        {
+          "name": "10. Terminer le job",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Status FINISHED', () => pm.expect(pm.response.json().status).to.equal('FINISHED'));",
+            "pm.test('FinishedAt present', () => pm.expect(pm.response.json().finishedAt).to.not.be.null);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{licenseToken}}" }
+            ],
+            "url": "{{gatewayUrl}}/api/jobs/finish",
+            "body": { "mode": "raw", "raw": "{\n  \"jobId\": \"{{jobId}}\"\n}" }
+          }
+        },
+        {
+          "name": "11. Terminer un job déjà terminé (doit échouer)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 400', () => pm.response.to.have.status(400));",
+            "pm.test('Error already finished', () => pm.expect(pm.response.json().error).to.include('already finished'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{licenseToken}}" }
+            ],
+            "url": "{{gatewayUrl}}/api/jobs/finish",
+            "body": { "mode": "raw", "raw": "{\n  \"jobId\": \"{{jobId}}\"\n}" }
+          }
+        },
+        {
+          "name": "12. Consulter le quota metering",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const json = pm.response.json();",
+            "pm.test('Used >= 1', () => pm.expect(json.used).to.be.at.least(1));",
+            "pm.test('Max = 100', () => pm.expect(json.max).to.equal(100));"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": "{{meteringUrl}}/api/metering/acme?max=100"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔒 Sécurité",
+      "item": [
+        {
+          "name": "13. Token invalide (doit échouer)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 403', () => pm.response.to.have.status(403));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer invalid.token.here" }
+            ],
+            "url": "{{gatewayUrl}}/api/apps/register",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Hacked App\",\n  \"description\": \"Doit être bloqué\"\n}" }
+          }
+        },
+        {
+          "name": "14. Sans token (doit échouer)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 401 ou 403', () => pm.expect([401, 403]).to.include(pm.response.code));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{gatewayUrl}}/api/apps/register",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"No Auth App\",\n  \"description\": \"Doit être bloqué\"\n}" }
+          }
+        },
+        {
+          "name": "15. Révoquer la licence",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Status REVOKED', () => pm.expect(pm.response.json().status).to.equal('REVOKED'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{gatewayUrl}}/api/licenses/revoke",
+            "body": { "mode": "raw", "raw": "{\n  \"tenantId\": \"acme\"\n}" }
+          }
+        },
+        {
+          "name": "16. Utiliser licence révoquée (doit échouer)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 403 - révoquée', () => pm.response.to.have.status(403));",
+            "pm.test('Error REVOKED', () => pm.expect(pm.response.json().error).to.include('REVOKED'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{licenseToken}}" }
+            ],
+            "url": "{{gatewayUrl}}/api/apps/register",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"App After Revoke\",\n  \"description\": \"Doit être bloqué\"\n}" }
+          }
+        }
+      ]
+    }
+  ]
+}

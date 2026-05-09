@@ -1,0 +1,80 @@
+version: "3.9"
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: licensing-postgres
+    environment:
+      POSTGRES_DB:       licensing
+      POSTGRES_USER:     licensing_user
+      POSTGRES_PASSWORD: licensing_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U licensing_user -d licensing"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: licensing-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Licensing Service ───────────────────────────────────────────────────
+  licensing-service:
+    build:
+      context: ./licensing-service
+      dockerfile: Dockerfile
+    container_name: licensing-service
+    ports:
+      - "8081:8081"
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=licensing;Username=licensing_user;Password=licensing_pass
+      - Jwt__Secret=LicensingChallengeSecretKey2025!SuperSecureHMACKey256bits
+      - ASPNETCORE_ENVIRONMENT=Development
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Metering Service ────────────────────────────────────────────────────
+  metering-service:
+    build:
+      context: ./metering-service
+      dockerfile: Dockerfile
+    container_name: metering-service
+    ports:
+      - "8082:8082"
+    environment:
+      - Redis__ConnectionString=redis:6379
+      - ASPNETCORE_ENVIRONMENT=Development
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ── Gateway ─────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: licensing-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    depends_on:
+      - licensing-service
+      - metering-service
+
+volumes:
+  postgres_data:

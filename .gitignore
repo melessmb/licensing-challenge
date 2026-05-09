@@ -1,0 +1,33 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+appsettings.Development.json
+
+# Docker
+.dockerignore
+
+# IDE
+.idea/
+.vscode/
+*.DotSettings
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI tools
+.claude
+.claude/
+.cursor/
+.copilot/
